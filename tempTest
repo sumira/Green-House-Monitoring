@@ -1,0 +1,46 @@
+#define BLYNK_TEMPLATE_ID ""
+#define BLYNK_TEMPLATE_NAME "Green House"
+#define BLYNK_AUTH_TOKEN ""
+
+#define BLYNK_PRINT Serial
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+
+#define analogPin A0
+
+const char* ssid = "Dialog 4G 564";
+const char* pass = "";
+
+void setup() {
+  Serial.begin(115200);
+  delay(100);
+  
+  // Connect to Blynk
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  pinMode(analogPin, INPUT);
+}
+
+void loop() {
+  Blynk.run();
+  
+  // Read analog value
+  int analogVal = analogRead(analogPin);
+  int mappedVal = map(analogVal, 0, 1023, 0, 100);
+  Serial.print("Sensor value is ");
+  Serial.println(mappedVal);
+  
+  // Send to Blynk
+  Blynk.virtualWrite(V0, mappedVal);
+  Blynk.virtualWrite(V1, sqrt(mappedVal));
+  
+  delay(2000);
+}
