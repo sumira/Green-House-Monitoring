@@ -1,6 +1,6 @@
-#define BLYNK_TEMPLATE_ID "TMPL6z4bJ6x3u"
+#define BLYNK_TEMPLATE_ID "***********"
 #define BLYNK_TEMPLATE_NAME "Green House"
-#define BLYNK_AUTH_TOKEN "73XwsCN_2M5hfrDX3U9GI0p5WnbB52JG"
+#define BLYNK_AUTH_TOKEN "****************"
 
 #define BLYNK_PRINT Serial
 
