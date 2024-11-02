@@ -1,14 +1,16 @@
-#define BLYNK_TEMPLATE_ID "***********"
+
+#define BLYNK_TEMPLATE_ID ""
 #define BLYNK_TEMPLATE_NAME "Green House"
-#define BLYNK_AUTH_TOKEN "****************"
+#define BLYNK_AUTH_TOKEN ""
+
 
 #define BLYNK_PRINT Serial
 
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 
-const char* ssid = "CISLabs";
-const char* pass = "f6De1707";
+const char* ssid = "TCL 30E";
+const char* pass = "dee04300";
 
 #define DHT11_PIN D5
 #include <DFRobot_DHT11.h>
@@ -19,8 +21,8 @@ DFRobot_DHT11 DHT;
 BH1750 lightMeter;
 
 
-const int sensor_pin = A0;  
-
+const int sensor_pin = A0;
+const int led_pin = D4; 
 
 
 void setup() {
@@ -40,7 +42,8 @@ void setup() {
   Wire.begin();
   lightMeter.begin();
   pinMode(sensor_pin, INPUT);
-  
+  pinMode(led_pin, OUTPUT);
+ 
 
 }
 
@@ -60,28 +63,41 @@ void loop() {
   //BH1750 segment
   float lux = lightMeter.readLightLevel();
 
-  if(DHT.temperature > 40){
+  if(DHT.temperature > 33){
 
-    Serial.println("High Temperature");
+    Serial.println("High Temperature detected");
     Blynk.logEvent("temperature_event", String("Green house temperature is greater than 40C!"));
+    digitalWrite(led_pin,LOW);
  
   }
-   if(DHT.humidity > 70){
+  else{
 
-    Serial.println("High Humidity");
+    digitalWrite(led_pin,HIGH);
+      
+   }
+   if(DHT.humidity > 80){
+
+    Serial.println("High Humidity detected");
     Blynk.logEvent("humidity_event", String("Green house humidity is greater than 70%!"));
- 
+    
   }
+
 
    if(moisture_percentage > 50){
 
-    Serial.println("High temperature");
+    Serial.println("High soil moisture detected");
     Blynk.logEvent("soil_moisture_event", String("Green house soil moisture is greater than 50%!"));
  
   }
+   else if(moisture_percentage < 10){
+
+    Serial.println("Low soil moisture detected");
+    Blynk.logEvent("low_soil_moisture_event", String("Green house soil moisture is lower than 10%!"));
+    
+  }
     if(lux > 900){
 
-    Serial.println("Extreme Sun light");
+    Serial.println("Extreme Sun light detected");
     Blynk.logEvent("light_intensity_event", String("Green house light intensity is in a critical level!"));
  
   }
