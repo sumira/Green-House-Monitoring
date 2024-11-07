@@ -1,0 +1,409 @@
+ #ifdef ESP8266
+#include <ESP8266WiFi.h>
+#else
+#include <WiFi.h>
+#endif
+
+#include <ArduinoJson.h>
+#include <PubSubClient.h>
+#include <WiFiClientSecure.h>
+
+#include <DallasTemperature.h>
+#include "DHT.h"
+#include "BH1750.h"
+//#include <Wire.h>
+BH1750 lightMeter;
+
+/****** WiFi Connection Details *******/
+const char* ssid = "Dilanka";
+const char* password = "aththanayaka";
+
+/******* MQTT Broker Connection Details *******/
+const char* mqtt_server = "8d7e7602bb974d3d8783679376b850ea.s1.eu.hivemq.cloud";
+const char* mqtt_username = "dilankahashan";
+const char* mqtt_password = "Amdh1997";
+const int mqtt_port = 8883;
+
+/**** Secure WiFi Connectivity Initialisation *****/
+WiFiClientSecure espClient;
+
+/**** MQTT Client Initialisation Using WiFi Connection *****/
+PubSubClient client(espClient);
+
+unsigned long lastMsg = 0;
+#define MSG_BUFFER_SIZE (50)
+char msg[MSG_BUFFER_SIZE];
+
+
+#define Temp_pin 12
+OneWire oneWire(Temp_pin);
+DallasTemperature sensors(&oneWire);
+
+int R1 = 1000; // Value of resistor for EC probe
+int EC_Read = 14;
+int ECPower = 27;
+float Temp_C; // Do not change
+float Temp_F; // Do not change
+float Temp1_Value = 0;
+float Temp_Coef = 0.019; // You can leave as it is
+/////////////////This part needs your attention during calibration only///////////////
+float Calibration_PPM = 1080 ; //Change to PPM reading measured with a separate meter
+float K = -1.0; //You must change this constant once for your probe(see video)
+float PPM_Con = 0.5; //You must change this only if your meter uses a different factor
+/////////////////////////////////////////////////////////////////////////////////////
+float CalibrationEC = (Calibration_PPM * 2) / 1000;
+float Temperature = 0;
+float EC;
+float EC_at_25;
+int ppm = 0;
+float A_to_D = 0;
+float Vin = 5;
+float Vdrop = 0;
+float R_Water;
+float Value = 0;
+int waterlevel = 0;
+
+//Water level sensor
+const int trigPin = 5;
+const int echoPin = 18;
+
+//define sound speed in cm/uS
+#define SOUND_SPEED 0.034
+#define CM_TO_INCH 0.393701
+
+long duration;
+float distanceCm;
+float distanceInch;
+float distanceFeet; //Add this line
+
+#define DPIN 13      //Pin to connect DHT sensor (GPIO number)
+#define DTYPE DHT11   // Define DHT 11 or DHT22 sensor type
+
+DHT dht(DPIN, DTYPE);
+
+#define w_pump 15  //Water pump 
+#define f_pump 2  //Furtilizer Pump  
+#define Lights 4  //Light pannels   
+#define Fans 5  // Fans  
+
+int wp_status = 0;
+int fp_status = 0;
+int lights_status = 0;
+int fan_status = 0;
+
+unsigned long last=0 ;
+
+
+/****** root certificate *********/
+
+static const char *root_ca PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+-----END CERTIFICATE-----
+)EOF";
+
+/************* Connect to WiFi ***********/
+void setup_wifi() {
+  delay(10);
+  Serial.print("\nConnecting to ");
+  Serial.println(ssid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  randomSeed(micros());
+  Serial.println("\nWiFi connected\nIP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+/************* Connect to MQTT Broker ***********/
+void reconnect() {
+  
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP8266Client-";   // Create a random client ID
+    clientId += String(random(0xffff), HEX);
+    // Attempt to connect
+    if (client.connect(clientId.c_str(), mqtt_username, mqtt_password)) {
+      Serial.println("connected");
+
+      client.subscribe("fan_status");   // subscribe the topics here
+      client.subscribe("light_status");
+      client.subscribe("water_pump_status");
+      client.subscribe("fertilizer_pump_status");
+
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");   // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+/***** Call back Method for Receiving MQTT messages and Switching LED ****/
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  String incommingMessage = "";
+  for (int i = 0; i < length; i++) incommingMessage+=(char)payload[i];
+
+  Serial.println("Message arrived ["+String(topic)+"]"+incommingMessage);
+
+  
+
+
+  //--- check the incomming message
+    if( strcmp(topic,"fan_status") == 0){
+     if (incommingMessage.equals("1")){ 
+      digitalWrite(Fans, HIGH);
+      fan_status = 1;
+     }else{
+      fan_status = 0;
+      digitalWrite(Fans, LOW);
+     }
+    }
+
+    if( strcmp(topic,"light_status") == 0){
+       if (incommingMessage.equals("1")){
+        lights_status = 1;
+        digitalWrite(Lights, HIGH);   
+       }else{
+        lights_status = 0;
+        digitalWrite(Lights, LOW);  
+       }
+     }
+
+   if( strcmp(topic,"water_pump_status") == 0){
+       if (incommingMessage.equals("1")) {
+        wp_status = 1;
+        digitalWrite(w_pump, HIGH);
+       }else {
+         wp_status = 0;
+        digitalWrite(w_pump, LOW); 
+       } 
+    }
+
+   if( strcmp(topic,"fertilizer_pump_status") == 0){
+       if (incommingMessage.equals("1")) {
+        fp_status = 1;
+        digitalWrite(f_pump, HIGH);   
+       }else{ 
+        fp_status = 0;
+        digitalWrite(f_pump, LOW);  
+       }
+    }
+
+}
+
+/**** Method for Publishing MQTT Messages **********/
+void publishMessage(const char* topic, String payload , boolean retained){
+  if (client.publish(topic, payload.c_str(), true))
+      Serial.println("Message publised ["+String(topic)+"]: "+payload);
+}
+
+/**** Application Initialisation Function******/
+void setup() {
+
+  pinMode(EC_Read, INPUT);
+  pinMode(ECPower, OUTPUT);
+  sensors.begin();//temprature sensor
+
+  Wire.begin();
+  lightMeter.begin();
+
+  dht.begin();
+
+  Serial.begin(9600);
+  while (!Serial) delay(1);
+  setup_wifi();
+
+  #ifdef ESP8266
+    espClient.setInsecure();
+  #else
+    espClient.setCACert(root_ca);      // enable this line and the the "certificate" code for secure connection
+  #endif
+
+  
+   //analogReadResolution(12); // Set the ADC resolution to 12 bits (0-4095)
+   
+  // Define Actuators
+  pinMode(w_pump, OUTPUT);
+  pinMode(f_pump, OUTPUT);
+  pinMode(Lights, OUTPUT);
+  pinMode(Fans, OUTPUT);
+
+  //Blink all Actuators
+  digitalWrite(w_pump, LOW);
+  digitalWrite(f_pump, LOW);
+  digitalWrite(Lights, LOW);
+  digitalWrite(Fans, LOW);
+  delay(2000);
+  digitalWrite(w_pump, HIGH);
+  digitalWrite(f_pump, HIGH);
+  digitalWrite(Lights, HIGH);
+  digitalWrite(Fans, HIGH);
+
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
+
+   pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+  
+}
+
+/******** Main Function *************/
+void loop() {
+
+
+  if (!client.connected()) reconnect(); // check if client is connected
+  client.loop();
+  
+  client.setCallback(callback);
+
+
+  //Light LUX
+  float lux = lightMeter.readLightLevel();
+  Serial.print("Light: ");
+  Serial.print(lux);
+  Serial.print(" lx , ");
+  delay(100);
+
+
+  //DHT sensor Data
+  float tc = dht.readTemperature(false);//Read temperature in C
+  float tk = tc+273.5; //Add this line to convert the temperature to kelvin
+  
+  float hu = dht.readHumidity();          //Read Humidity
+
+  Serial.print("Temp: ");
+  Serial.print(tc);
+  Serial.print(" C, ");
+  Serial.print(hu);
+  Serial.print("%");
+
+
+  //EC Sensor
+  GetEC();
+  delay(6000); //Do not make this less than 6 sec (6000)
+
+  //Water Level data
+  // Clears the trigPin
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  duration = pulseIn(echoPin, HIGH);
+  
+  // Calculate the distance
+  distanceCm = duration * SOUND_SPEED/2;
+  waterlevel = map(distanceCm,0,50,100,0);
+
+  // Convert to inches
+  distanceInch = distanceCm * CM_TO_INCH;
+  // Convert to feet
+  distanceFeet = distanceInch/12;
+  
+  // Prints the distance in the Serial Monitor
+  Serial.print("Distance (feet): "); //change this line
+  Serial.print(distanceFeet); //change this line
+  Serial.print("water level: ");
+  Serial.print(waterlevel);
+   Serial.println("%   ");
+
+ DynamicJsonDocument doc(1024);
+
+  doc["deviceId"] = "ESP32";
+  doc["tds"] = ppm;
+  doc["waterlevel"] = waterlevel;
+  doc["light"] = lux;
+  doc["temperature"] = tk;
+  doc["humidity"] = hu;
+  doc["wpstatus"] = wp_status;
+  doc["fpstatus"] = fp_status;
+  doc["lightstatus"] = lights_status;
+  doc["fanstatus"] = fan_status;
+   
+  char mqtt_message[256];
+  serializeJson(doc, mqtt_message);
+  publishMessage("esp32_data", mqtt_message, true);
+
+// water pump frequently 
+  
+  unsigned long now = millis();
+  if (now-last  > 120000) {
+    
+   wp_status = 1;
+   digitalWrite(w_pump, LOW);
+   delay(20000);
+   wp_status = 0;
+   digitalWrite(w_pump, HIGH); 
+
+   now = last;
+  }
+
+
+
+}
+
+void GetEC()
+{
+  sensors.requestTemperatures();
+  Temp1_Value = sensors.getTempCByIndex(0);
+  Temperature = sensors.getTempCByIndex(0);
+
+  digitalWrite(ECPower, HIGH);
+  A_to_D = analogRead(EC_Read);
+  A_to_D = analogRead(EC_Read);
+  digitalWrite(ECPower, LOW);
+  Vdrop = (Vin * A_to_D) / 1024.0;
+  R_Water = (Vdrop * R1) / (Vin - Vdrop);
+  EC = 1000 / (R_Water * K);
+  EC_at_25 = EC / (1 + Temp_Coef * (Temp1_Value - 25.0));
+  ppm = (EC_at_25) * (PPM_Con * 1000);
+  Serial.print(" EC: ");
+  Serial.print(EC_at_25 * 1000);
+  Serial.print(" (uS/cm) , ");
+  Serial.print(" TDS:");
+  Serial.print(ppm);
+  Serial.print(" ppm , ");
+  Serial.print(" Water temp. : ");
+  Serial.print(Temp1_Value);
+  Serial.println(" *C ");
+}
